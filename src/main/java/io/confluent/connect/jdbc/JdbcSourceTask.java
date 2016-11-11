@@ -225,6 +225,7 @@ public class JdbcSourceTask extends SourceTask {
           assert removedQuerier == querier;
           now = time.milliseconds();
           querier.close(now);
+          db.commit();
           tableQueue.add(querier);
         }
 
