@@ -53,6 +53,7 @@ public class JdbcSourceTask extends SourceTask {
   private Connection db;
   private PriorityQueue<TableQuerier> tableQueue = new PriorityQueue<TableQuerier>();
   private AtomicBoolean stop;
+  private boolean isPSQL;
 
   public JdbcSourceTask() {
     this.time = new SystemTime();
@@ -152,19 +153,20 @@ public class JdbcSourceTask extends SourceTask {
                              (Long) offset.get(TIMESTAMP_FIELD);
 
       String topicPrefix = config.getString(JdbcSourceTaskConfig.TOPIC_PREFIX_CONFIG);
+      isPSQL = dbUrl.contains("jdbc:postgresql");
 
       if (mode.equals(JdbcSourceTaskConfig.MODE_BULK)) {
-        tableQueue.add(new BulkTableQuerier(queryMode, tableOrQuery, topicPrefix));
+        tableQueue.add(new BulkTableQuerier(queryMode, tableOrQuery, topicPrefix, isPSQL));
       } else if (mode.equals(JdbcSourceTaskConfig.MODE_INCREMENTING)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
-            queryMode, tableOrQuery, topicPrefix, null, null, incrementingColumn, incrementingOffset, timestampDelayInterval));
+            queryMode, tableOrQuery, topicPrefix, null, null, incrementingColumn, incrementingOffset, timestampDelayInterval, isPSQL));
       } else if (mode.equals(JdbcSourceTaskConfig.MODE_TIMESTAMP)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
-            queryMode, tableOrQuery, topicPrefix, timestampColumn, timestampOffset, null, null, timestampDelayInterval));
+            queryMode, tableOrQuery, topicPrefix, timestampColumn, timestampOffset, null, null, timestampDelayInterval, isPSQL));
       } else if (mode.endsWith(JdbcSourceTaskConfig.MODE_TIMESTAMP_INCREMENTING)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
             queryMode, tableOrQuery, topicPrefix, timestampColumn, timestampOffset,
-            incrementingColumn, incrementingOffset, timestampDelayInterval));
+            incrementingColumn, incrementingOffset, timestampDelayInterval, isPSQL));
       }
     }
 
@@ -209,7 +211,7 @@ public class JdbcSourceTask extends SourceTask {
       List<SourceRecord> results = new ArrayList<>();
       try {
         log.debug("Checking for next block of results from {}", querier.toString());
-        querier.maybeStartQuery(db);
+        querier.maybeStartQuery(db, isPSQL);
 
         int batchMaxRows = config.getInt(JdbcSourceTaskConfig.BATCH_MAX_ROWS_CONFIG);
         boolean hadNext = true;

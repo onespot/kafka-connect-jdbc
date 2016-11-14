@@ -49,24 +49,24 @@ public class DataConverter {
 
   private static final Calendar UTC_CALENDAR = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
 
-  public static Schema convertSchema(String tableName, ResultSetMetaData metadata)
+  public static Schema convertSchema(String tableName, ResultSetMetaData metadata, boolean isPSQL)
       throws SQLException {
     // TODO: Detect changes to metadata, which will require schema updates
     SchemaBuilder builder = SchemaBuilder.struct().name(tableName);
     for (int col = 1; col <= metadata.getColumnCount(); col++) {
-      addFieldSchema(metadata, col, builder);
+      addFieldSchema(metadata, col, builder, isPSQL);
     }
     return builder.build();
   }
 
-  public static Struct convertRecord(Schema schema, ResultSet resultSet)
+  public static Struct convertRecord(Schema schema, ResultSet resultSet, boolean isPSQL)
       throws SQLException {
     ResultSetMetaData metadata = resultSet.getMetaData();
     Struct struct = new Struct(schema);
     for (int col = 1; col <= metadata.getColumnCount(); col++) {
       try {
         convertFieldValue(resultSet, col, metadata.getColumnType(col), struct,
-                          metadata.getColumnLabel(col));
+                          metadata.getColumnLabel(col), isPSQL);
       } catch (IOException e) {
         log.warn("Ignoring record because processing failed:", e);
       } catch (SQLException e) {
@@ -78,7 +78,7 @@ public class DataConverter {
 
 
   private static void addFieldSchema(ResultSetMetaData metadata, int col,
-                                     SchemaBuilder builder)
+                                     SchemaBuilder builder, boolean isPSQL)
       throws SQLException {
     // Label is what the query requested the column name be using an "AS" clause, name is the
     // original
@@ -251,6 +251,14 @@ public class DataConverter {
       case Types.REF:
       case Types.ROWID:
       default: {
+        if (isPSQL) {
+          if (optional) {
+            builder.field(fieldName, Schema.OPTIONAL_STRING_SCHEMA);
+          } else {
+            builder.field(fieldName, Schema.STRING_SCHEMA);
+          }
+          break;
+        }
         log.warn("JDBC type {} not currently supported", sqlType);
         break;
       }
@@ -258,7 +266,7 @@ public class DataConverter {
   }
 
   private static void convertFieldValue(ResultSet resultSet, int col, int colType,
-                                        Struct struct, String fieldName)
+                                        Struct struct, String fieldName, boolean isPSQL)
       throws SQLException, IOException {
     final Object colValue;
     switch (colType) {
@@ -278,7 +286,11 @@ public class DataConverter {
          * TODO: Postgres handles this differently, returning a string "t" or "f". See the
          * elasticsearch-jdbc plugin for an example of how this is handled
          */
-        colValue = resultSet.getByte(col);
+        if (!isPSQL) {
+          colValue = resultSet.getByte(col);
+        } else {
+          colValue = (byte) (resultSet.getBoolean(col) ? 1 : 0);
+        }
         break;
       }
 
@@ -417,6 +429,10 @@ public class DataConverter {
       case Types.REF:
       case Types.ROWID:
       default: {
+        if (isPSQL) {
+          colValue = resultSet.getString(col);
+          break;
+        }
         // These are not currently supported, but we don't want to log something for every single
         // record we translate. There will already be errors logged for the schema translation
         return;
