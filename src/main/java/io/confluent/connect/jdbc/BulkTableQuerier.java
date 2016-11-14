@@ -34,8 +34,10 @@ import java.util.Map;
 public class BulkTableQuerier extends TableQuerier {
   private static final Logger log = LoggerFactory.getLogger(BulkTableQuerier.class);
 
-  public BulkTableQuerier(QueryMode mode, String name, String topicPrefix) {
+  private final boolean isPSQL;
+  public BulkTableQuerier(QueryMode mode, String name, String topicPrefix, boolean isPSQL) {
     super(mode, name, topicPrefix);
+    this.isPSQL = isPSQL;
   }
 
   @Override
@@ -61,7 +63,7 @@ public class BulkTableQuerier extends TableQuerier {
 
   @Override
   public SourceRecord extractRecord() throws SQLException {
-    Struct record = DataConverter.convertRecord(schema, resultSet);
+    Struct record = DataConverter.convertRecord(schema, resultSet, isPSQL);
     // TODO: key from primary key? partition?
     final String topic;
     final Map<String, String> partition;
