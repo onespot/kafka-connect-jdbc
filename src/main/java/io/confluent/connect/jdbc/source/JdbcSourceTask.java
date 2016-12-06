@@ -202,7 +202,10 @@ public class JdbcSourceTask extends SourceTask {
         if (!hadNext) {
           // If we finished processing the results from the current query, we can reset and send the querier to the tail of the queue
           resetAndRequeueHead(querier);
-          cachedConnectionProvider.getValidConnection().commit();
+
+          if (isPSQL) {
+            cachedConnectionProvider.getValidConnection().commit();
+          }
         }
 
         if (results.isEmpty()) {
