@@ -51,6 +51,7 @@ public class JdbcSourceTask extends SourceTask {
   private CachedConnectionProvider cachedConnectionProvider;
   private PriorityQueue<TableQuerier> tableQueue = new PriorityQueue<TableQuerier>();
   private AtomicBoolean stop;
+  private boolean isPSQL;
 
   public JdbcSourceTask() {
     this.time = new SystemTime();
@@ -73,7 +74,8 @@ public class JdbcSourceTask extends SourceTask {
       throw new ConnectException("Couldn't start JdbcSourceTask due to configuration error", e);
     }
 
-    cachedConnectionProvider = new CachedConnectionProvider(config.getString(JdbcSourceConnectorConfig.CONNECTION_URL_CONFIG));
+    final String connectionUrl = config.getString(JdbcSourceConnectorConfig.CONNECTION_URL_CONFIG);
+    cachedConnectionProvider = new CachedConnectionProvider(connectionUrl);
 
     List<String> tables = config.getList(JdbcSourceTaskConfig.TABLES_CONFIG);
     String query = config.getString(JdbcSourceTaskConfig.QUERY_CONFIG);
@@ -139,18 +141,20 @@ public class JdbcSourceTask extends SourceTask {
       Map<String, Object> offset = offsets == null ? null : offsets.get(partition);
 
       String topicPrefix = config.getString(JdbcSourceTaskConfig.TOPIC_PREFIX_CONFIG);
+      isPSQL = connectionUrl.contains("jdbc:postgresql");
 
       if (mode.equals(JdbcSourceTaskConfig.MODE_BULK)) {
-        tableQueue.add(new BulkTableQuerier(queryMode, tableOrQuery, schemaPattern, topicPrefix));
+        tableQueue.add(new BulkTableQuerier(queryMode, tableOrQuery, schemaPattern, topicPrefix, isPSQL));
       } else if (mode.equals(JdbcSourceTaskConfig.MODE_INCREMENTING)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
-            queryMode, tableOrQuery, topicPrefix, null, incrementingColumn, offset, timestampDelayInterval, schemaPattern));
+            queryMode, tableOrQuery, topicPrefix, null, incrementingColumn, offset, timestampDelayInterval, schemaPattern, isPSQL));
       } else if (mode.equals(JdbcSourceTaskConfig.MODE_TIMESTAMP)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
-            queryMode, tableOrQuery, topicPrefix, timestampColumn, null, offset, timestampDelayInterval, schemaPattern));
+            queryMode, tableOrQuery, topicPrefix, timestampColumn, null, null, timestampDelayInterval, schemaPattern, isPSQL));
       } else if (mode.endsWith(JdbcSourceTaskConfig.MODE_TIMESTAMP_INCREMENTING)) {
         tableQueue.add(new TimestampIncrementingTableQuerier(
-            queryMode, tableOrQuery, topicPrefix, timestampColumn, incrementingColumn, offset, timestampDelayInterval, schemaPattern));
+            queryMode, tableOrQuery, topicPrefix, timestampColumn,
+            incrementingColumn, offset, timestampDelayInterval, schemaPattern, isPSQL));
       }
     }
 
@@ -187,7 +191,7 @@ public class JdbcSourceTask extends SourceTask {
       final List<SourceRecord> results = new ArrayList<>();
       try {
         log.debug("Checking for next block of results from {}", querier.toString());
-        querier.maybeStartQuery(cachedConnectionProvider.getValidConnection());
+        querier.maybeStartQuery(cachedConnectionProvider.getValidConnection(), isPSQL);
 
         int batchMaxRows = config.getInt(JdbcSourceTaskConfig.BATCH_MAX_ROWS_CONFIG);
         boolean hadNext = true;
@@ -198,6 +202,7 @@ public class JdbcSourceTask extends SourceTask {
         if (!hadNext) {
           // If we finished processing the results from the current query, we can reset and send the querier to the tail of the queue
           resetAndRequeueHead(querier);
+          cachedConnectionProvider.getValidConnection().commit();
         }
 
         if (results.isEmpty()) {
