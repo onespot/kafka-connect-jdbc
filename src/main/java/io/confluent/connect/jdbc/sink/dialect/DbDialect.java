@@ -266,6 +266,7 @@ public abstract class DbDialect {
       case "mysql":
         return new MySqlDialect();
       case "postgresql":
+      case "redshift":
         return new PostgreSqlDialect();
       default:
         return new GenericDialect();
