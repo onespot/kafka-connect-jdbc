@@ -100,38 +100,26 @@ public class PreparedStatementBinder {
 
     for (final String fieldName : fieldsMetadata.nonKeyFieldNames) {
       final Field field = record.valueSchema().field(fieldName);
-      bindField(index++, field.schema(), valueStruct.get(field));
+      bindField(index++, field.schema(), valueStruct.get(field), fieldName);
     }
 
     statement.addBatch();
   }
 
   void bindField(int index, Schema schema, Object value) throws SQLException {
-    bindField(statement, index, schema, value);
+    bindField(statement, index, schema, value, null);
   }
 
-  static void bindField(PreparedStatement statement, int index, Schema schema, Object value) throws SQLException {
+  void bindField(int index, Schema schema, Object value, String fieldName) throws SQLException {
+    bindField(statement, index, schema, value, fieldName);
+  }
+
+  static void bindField(PreparedStatement statement, int index, Schema schema, Object value, String fieldName) throws SQLException {
     if (value == null) {
       statement.setObject(index, null);
     } else {
-      final boolean bound = maybeBindLogical(statement, index, schema, value);
+      final boolean bound = maybeBindLogical(statement, index, schema, value, fieldName);
       if (!bound) {
-
-        // Our created_at times in avro messages are using string types.
-        // We want to insert these into Redshift as a timestamp type.
-        // The Schema.type() case statement below specifically sends all strings with setString()
-        //
-        // This case statement is a hack to short circuit "magic" field names that we know we want to parse
-        // into timestamps. Otherwise we'd be having to test every string to see if its a timestamp.
-        // If we do detect a timestamp for this field, we want to return and skip the next case statement.
-        if (null != schema.name()) {
-          switch (schema.name()) {
-            case "created_at":
-            case "updated_at":
-              statement.setTimestamp(index, new java.sql.Timestamp(Instant.parse((String) value).toEpochMilli()));
-              return;
-          }
-        }
 
         switch (schema.type()) {
           case INT8:
@@ -176,7 +164,24 @@ public class PreparedStatementBinder {
     }
   }
 
-  static boolean maybeBindLogical(PreparedStatement statement, int index, Schema schema, Object value) throws SQLException {
+  static boolean maybeBindLogical(PreparedStatement statement, int index, Schema schema, Object value, String fieldName) throws SQLException {
+
+    // Our created_at times in avro messages are using string types.
+    // We want to insert these into Redshift as a timestamp type.
+    // The Schema.type() case statement specifically sends all strings with setString()
+    //
+    // This case statement is a hack to short circuit "magic" field names that we know we want to parse
+    // into timestamps. Otherwise we'd be having to test every string to see if its a timestamp.
+    // If we do detect a timestamp for this field, we want to return and skip the next case statement.
+    if (null != fieldName) {
+      switch (fieldName) {
+        case "created_at":
+        case "updated_at":
+          statement.setTimestamp(index, new java.sql.Timestamp(Instant.parse((String) value).toEpochMilli()));
+          return true;
+      }
+    }
+
     if (schema.name() != null) {
       switch (schema.name()) {
         case Date.LOGICAL_NAME:
