@@ -31,7 +31,6 @@ import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.time.format.DateTimeParseException;
 
 import io.confluent.connect.jdbc.sink.metadata.FieldsMetadata;
 import io.confluent.connect.jdbc.sink.metadata.SchemaPair;
@@ -125,11 +124,13 @@ public class PreparedStatementBinder {
         // This case statement is a hack to short circuit "magic" field names that we know we want to parse
         // into timestamps. Otherwise we'd be having to test every string to see if its a timestamp.
         // If we do detect a timestamp for this field, we want to return and skip the next case statement.
-        switch(schema.name()) {
-          case "created_at":
-          case "updated_at":
-            statement.setTimestamp(index, new java.sql.Timestamp(Instant.parse((String) value).toEpochMilli()));
-            return;
+        if (null != schema.name()) {
+          switch (schema.name()) {
+            case "created_at":
+            case "updated_at":
+              statement.setTimestamp(index, new java.sql.Timestamp(Instant.parse((String) value).toEpochMilli()));
+              return;
+          }
         }
 
         switch (schema.type()) {
